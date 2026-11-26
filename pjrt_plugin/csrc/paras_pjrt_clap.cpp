@@ -3,9 +3,9 @@
 #include <clap/blas_factory.hpp>
 
 #if defined(PARAS_PJRT_CUDA)
-#include <cuda_runtime_api.h>
+extern "C" int cudaDeviceSynchronize(void);
 #elif defined(PARAS_PJRT_HIP)
-#include <hip/hip_runtime_api.h>
+extern "C" int hipDeviceSynchronize(void);
 #endif
 
 #include <cstdlib>
@@ -115,18 +115,18 @@ bool clap_gemm_f32_raw(const void* a, const void* b, void* c,
     }
 
 #if defined(PARAS_PJRT_CUDA)
-    cudaError_t cerr = cudaDeviceSynchronize();
-    if (cerr != cudaSuccess) {
+    int cerr = cudaDeviceSynchronize();
+    if (cerr != 0) {
         if (err_msg) {
-            *err_msg = std::string("cudaDeviceSynchronize failed: ") + cudaGetErrorString(cerr);
+            *err_msg = "cudaDeviceSynchronize failed with code " + std::to_string(cerr);
         }
         return false;
     }
 #elif defined(PARAS_PJRT_HIP)
-    hipError_t herr = hipDeviceSynchronize();
-    if (herr != hipSuccess) {
+    int herr = hipDeviceSynchronize();
+    if (herr != 0) {
         if (err_msg) {
-            *err_msg = std::string("hipDeviceSynchronize failed: ") + hipGetErrorString(herr);
+            *err_msg = "hipDeviceSynchronize failed with code " + std::to_string(herr);
         }
         return false;
     }
