@@ -57,10 +57,12 @@ bool deserialize_mlir_bytecode(const char* code, std::size_t size,
     close(fd);
 
     const std::string py_cmd =
-        std::string("python -c \"import sys; from jax._src.interpreters import mlir; "
+        std::string("JAX_PLATFORMS=cpu python -c \"import sys; "
+                    "from jax._src.interpreters import mlir; "
                     "ctx = mlir.make_ir_context(); "
                     "data = open(sys.argv[1], 'rb').read(); "
-                    "print(mlir.ir.Module.parse(data, ctx))\" ") +
+                    "m = mlir.ir.Module.parse(data, ctx); "
+                    "print(mlir.module_to_string(m))\" ") +
         tmp_path + " 2>/dev/null";
 
     const std::vector<std::string> tools = {
