@@ -57,15 +57,18 @@ bool deserialize_mlir_bytecode(const char* code, std::size_t size,
     close(fd);
 
     const std::string py_cmd =
-        std::string("JAX_PLATFORMS=cpu python -c \"import sys; "
-                    "from jax._src.interpreters import mlir; "
-                    "ctx = mlir.make_ir_context(); "
-                    "data = open(sys.argv[1], 'rb').read(); "
-                    "try: m = mlir.ir.Module.parse(data, ctx)\n"
-                    "except Exception: "
-                    "from jaxlib.mlir.dialects import stablehlo; "
-                    "m = mlir.ir.Module.parse(stablehlo.deserialize_portable_artifact(data), ctx)\n"
-                    "print(mlir.module_to_string(m))\" ") +
+        std::string("JAX_PLATFORMS=cpu python -c \"\n"
+                    "import sys\n"
+                    "from jax._src.interpreters import mlir\n"
+                    "ctx = mlir.make_ir_context()\n"
+                    "data = open(sys.argv[1], 'rb').read()\n"
+                    "try:\n"
+                    "    m = mlir.ir.Module.parse(data, ctx)\n"
+                    "except Exception:\n"
+                    "    from jaxlib.mlir.dialects import stablehlo\n"
+                    "    m = mlir.ir.Module.parse(stablehlo.deserialize_portable_artifact(data), ctx)\n"
+                    "print(mlir.module_to_string(m))\n"
+                    "\" ") +
         tmp_path;
 
     const std::vector<std::string> tools = {
