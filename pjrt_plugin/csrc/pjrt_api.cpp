@@ -362,6 +362,14 @@ PJRT_Error* device_default_memory(PJRT_Device_DefaultMemory_Args* args) {
     return nullptr;
 }
 
+PJRT_Error* device_memory_stats(PJRT_Device_MemoryStats_Args* args) {
+    if (!args || !args->device) {
+        return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null device");
+    }
+    args->bytes_in_use = 0;
+    return nullptr;
+}
+
 // -----------------------------------------------------------------------------
 // Memory API
 // -----------------------------------------------------------------------------
@@ -480,6 +488,7 @@ PJRT_Api build_pjrt_api() {
     api.PJRT_Device_LocalHardwareId = device_local_hardware_id;
     api.PJRT_Device_AddressableMemories = device_addressable_memories;
     api.PJRT_Device_DefaultMemory = device_default_memory;
+    api.PJRT_Device_MemoryStats = device_memory_stats;
 
     api.PJRT_Memory_Id = memory_id;
     api.PJRT_Memory_Kind = memory_kind;
