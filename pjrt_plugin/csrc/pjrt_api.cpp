@@ -95,6 +95,7 @@ PJRT_Error* client_create(PJRT_Client_Create_Args* args) {
         dev->default_memory = mem.get();
         client->device_ptrs.push_back(to_pjrt(dev.get()));
         client->memory_ptrs.push_back(to_pjrt(mem.get()));
+        client->topology.device_descriptions.push_back(to_pjrt(&dev->description));
         client->devices.push_back(std::move(dev));
         client->memories.push_back(std::move(mem));
     }
@@ -200,6 +201,62 @@ PJRT_Error* client_default_device_assignment(PJRT_Client_DefaultDeviceAssignment
     for (std::size_t i = 0; i < args->default_assignment_size; ++i) {
         args->default_assignment[i] = 0;
     }
+    return nullptr;
+}
+
+PJRT_Error* client_topology_description(PJRT_Client_TopologyDescription_Args* args) {
+    if (!args || !args->client) {
+        return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null client");
+    }
+    args->topology = to_pjrt(&as_impl(args->client)->topology);
+    return nullptr;
+}
+
+// -----------------------------------------------------------------------------
+// TopologyDescription API
+// -----------------------------------------------------------------------------
+PJRT_Error* topology_destroy(PJRT_TopologyDescription_Destroy_Args* args) {
+    (void)args; // Client-owned topology in v0.1
+    return nullptr;
+}
+
+PJRT_Error* topology_platform_name(PJRT_TopologyDescription_PlatformName_Args* args) {
+    if (!args || !args->topology) {
+        return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null topology");
+    }
+    const ParasTopologyDescription* topo = as_impl(args->topology);
+    args->platform_name = topo->platform_name.c_str();
+    args->platform_name_size = topo->platform_name.size();
+    return nullptr;
+}
+
+PJRT_Error* topology_platform_version(PJRT_TopologyDescription_PlatformVersion_Args* args) {
+    if (!args || !args->topology) {
+        return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null topology");
+    }
+    const ParasTopologyDescription* topo = as_impl(args->topology);
+    args->platform_version = topo->platform_version.c_str();
+    args->platform_version_size = topo->platform_version.size();
+    return nullptr;
+}
+
+PJRT_Error* topology_get_device_descriptions(
+    PJRT_TopologyDescription_GetDeviceDescriptions_Args* args) {
+    if (!args || !args->topology) {
+        return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null topology");
+    }
+    ParasTopologyDescription* topo = as_impl(args->topology);
+    args->descriptions = topo->device_descriptions.data();
+    args->num_descriptions = topo->device_descriptions.size();
+    return nullptr;
+}
+
+PJRT_Error* topology_attributes(PJRT_TopologyDescription_Attributes_Args* args) {
+    if (!args || !args->topology) {
+        return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null topology");
+    }
+    args->attributes = nullptr;
+    args->num_attributes = 0;
     return nullptr;
 }
 
@@ -403,6 +460,13 @@ PJRT_Api build_pjrt_api() {
     api.PJRT_Client_Compile = paras_pjrt_api::client_compile;
     api.PJRT_Client_DefaultDeviceAssignment = client_default_device_assignment;
     api.PJRT_Client_BufferFromHostBuffer = paras_pjrt_api::client_buffer_from_host_buffer;
+    api.PJRT_Client_TopologyDescription = client_topology_description;
+
+    api.PJRT_TopologyDescription_Destroy = topology_destroy;
+    api.PJRT_TopologyDescription_PlatformName = topology_platform_name;
+    api.PJRT_TopologyDescription_PlatformVersion = topology_platform_version;
+    api.PJRT_TopologyDescription_GetDeviceDescriptions = topology_get_device_descriptions;
+    api.PJRT_TopologyDescription_Attributes = topology_attributes;
 
     api.PJRT_DeviceDescription_Id = device_desc_id;
     api.PJRT_DeviceDescription_ProcessIndex = device_desc_process_index;

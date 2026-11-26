@@ -90,6 +90,12 @@ struct ParasLoadedExecutable {
     bool deleted = false;
 };
 
+struct ParasTopologyDescription {
+    std::string platform_name = "paras";
+    std::string platform_version = "0.1.0";
+    std::vector<PJRT_DeviceDescription*> device_descriptions;
+};
+
 struct ParasClient {
     std::string platform_name = "paras";
     std::string platform_version = "0.1.0";
@@ -98,6 +104,7 @@ struct ParasClient {
     std::vector<std::unique_ptr<ParasMemory>> memories;
     std::vector<PJRT_Device*> device_ptrs;
     std::vector<PJRT_Memory*> memory_ptrs;
+    ParasTopologyDescription topology;
 };
 
 // Opaque handle cast helpers (avoids struct redefinition against pjrt_c_api.h)
@@ -118,6 +125,8 @@ inline ParasBuffer* as_impl(PJRT_Buffer* p) { return reinterpret_cast<ParasBuffe
 inline ParasExecutable* as_impl(PJRT_Executable* p) { return reinterpret_cast<ParasExecutable*>(p); }
 inline ParasLoadedExecutable* as_impl(PJRT_LoadedExecutable* p) { return reinterpret_cast<ParasLoadedExecutable*>(p); }
 inline ParasClient* as_impl(PJRT_Client* p) { return reinterpret_cast<ParasClient*>(p); }
+inline ParasTopologyDescription* as_impl(PJRT_TopologyDescription* p) { return reinterpret_cast<ParasTopologyDescription*>(p); }
+inline const ParasTopologyDescription* as_impl(const PJRT_TopologyDescription* p) { return reinterpret_cast<const ParasTopologyDescription*>(p); }
 
 inline PJRT_Event* to_pjrt(ParasEvent* p) { return reinterpret_cast<PJRT_Event*>(p); }
 inline PJRT_DeviceDescription* to_pjrt(ParasDeviceDescription* p) { return reinterpret_cast<PJRT_DeviceDescription*>(p); }
@@ -127,6 +136,7 @@ inline PJRT_Buffer* to_pjrt(ParasBuffer* p) { return reinterpret_cast<PJRT_Buffe
 inline PJRT_Executable* to_pjrt(ParasExecutable* p) { return reinterpret_cast<PJRT_Executable*>(p); }
 inline PJRT_LoadedExecutable* to_pjrt(ParasLoadedExecutable* p) { return reinterpret_cast<PJRT_LoadedExecutable*>(p); }
 inline PJRT_Client* to_pjrt(ParasClient* p) { return reinterpret_cast<PJRT_Client*>(p); }
+inline PJRT_TopologyDescription* to_pjrt(ParasTopologyDescription* p) { return reinterpret_cast<PJRT_TopologyDescription*>(p); }
 
 PJRT_Event* make_ready_event(ParasError* err = nullptr);
 
