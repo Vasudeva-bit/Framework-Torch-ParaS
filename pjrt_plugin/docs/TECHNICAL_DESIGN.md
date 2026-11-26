@@ -1,119 +1,109 @@
-# `pjrt_paras` v0.1 Technical Documentation
+# `pjrt_paras` v0.1 Technical Design & Execution Flow
 
-This document describes the architecture, build system, runtime components, and design constraints of the `pjrt_paras` v0.1 JAX PJRT C-API prototype implemented under `pjrt_plugin/`.
-
----
-
-## 1. Design Goals & Hard Constraints
-
-- **Standalone Linkage (Zero PyTorch Dependencies):** `libpjrt_paras.so` links **no** `libtorch`, `libc10`, or `pybind11` libraries. Keeping it isolated under `pjrt_plugin/` allows fast prototyping alongside `Framework-Torch-ParaS` while enabling a clean split into a standalone repository at v1.0.
-- **Option A (Direct PJRT C API):** Implements `pjrt_c_api.h` directly in C++ and exports `GetPjrtApi()`, without building or linking `libxla` or `pjrt_c_api_wrapper_impl.h`.
-- **Single-Runtime Rule:** `libpjrt_paras.so` must be built against the same CUDA or ROCm/HIP toolkit used by `ParaS-Compiler` (`parascc`) and `CLAP-Library`, and `torch` must never be imported in the same Python process as `jax`.
-- **Serial Compilation (`-j1`):** `parascc` uses second-resolution temporary filenames in `/tmp`; all `parascc` builds must run serially (`-- -j1`).
+This document is the complete technical reference for **`pjrt_paras` v0.1** under `pjrt_plugin/` in `Framework-Torch-ParaS`. It covers the architecture, file-to-file execution flow, verified AMD MI300X (`gfx942`) bring-up, and the roadmap from **v0.1 → v1.0**.
 
 ---
 
-## 2. Directory Layout
+## 1. What v0.1 Proved (Verified on 8× AMD Instinct MI300X `gfx942`)
 
-```text
-pjrt_plugin/
-├── CMakeLists.txt                       # Standalone CMake target for libpjrt_paras.so
-├── README.md                            # Quick-start build and run instructions
-├── pyproject.toml                       # Registers jax_plugins entry point "paras"
-├── docs/
-│   └── TECHNICAL_DESIGN.md              # This technical documentation
-├── scripts/
-│   ├── fetch_pjrt_header.sh             # Downloads xla/pjrt/c/pjrt_c_api.h into third_party/
-│   └── build_pjrt.sh                    # Configures, builds (-j1), and verifies libpjrt_paras.so
-├── third_party/
-│   └── pjrt_c_api.h                     # (Fetched) OpenXLA PJRT C-API header matching jaxlib
-├── csrc/
-│   ├── paras_pjrt_sycl.hpp              # Pure C++ runtime/allocator/GEMM interface (no SYCL/CLAP headers)
-│   ├── paras_pjrt_sycl.cpp              # SYCL device/queue/USM implementation (compiled by parascc)
-│   ├── paras_pjrt_clap.cpp              # CLAP-BLAS GEMM wrapper (compiled by host g++)
-│   ├── pjrt_types.hpp                   # Concrete structs backing PJRT_* opaque handles
-│   ├── pjrt_event.cpp                   # PJRT_Event_* lifecycle and OnReady callbacks
-│   ├── pjrt_buffer.cpp                  # Host<->Device buffer transfers and metadata
-│   ├── pjrt_compile.cpp                 # StableHLO MLIR parsing -> MatMulPlan
-│   ├── pjrt_executable.cpp              # PJRT_Executable_* / PJRT_LoadedExecutable_* & GEMM dispatch
-│   └── pjrt_api.cpp                     # PJRT_Api table population and GetPjrtApi() export
-├── python/
-│   └── jax_paras_plugin/
-│       └── __init__.py                  # initialize() -> xb.register_plugin("paras", ...)
-└── tests/
-    └── test_matmul.py                   # End-to-end JAX jit MatMul verification
+- **Zero PyTorch Linkage:** `libpjrt_paras.so` has zero `libtorch`, `libc10`, or `pybind11` dependencies and exports `GetPjrtApi` directly.
+- **Direct PJRT C API (Option A):** Implements `pjrt_c_api.h` directly in C++ without `libxla` or `pjrt_c_api_wrapper_impl.h`.
+- **End-to-End JAX Execution on ParaS + CLAP:**
+  - `jax.devices()` enumerates all 8 `ParaSDevice(id=0..7, name=AMD Instinct MI300X)` GPUs via SYCL (`parascc -parasdevice hip:gfx942`).
+  - `jax.jit` MatMul passes `np.testing.assert_allclose(..., rtol=1e-4, atol=1e-4)` across repeated iterations for:
+    - `square_64`: `(64, 64) @ (64, 64)`
+    - `rect_128_256_64`: `(128, 256) @ (256, 64)`
+    - `trans_rhs_128_256_64`: `(128, 256) @ (64, 256).T` (including `stablehlo.transpose` + `stablehlo.dot_general`)
+
+---
+
+## 2. End-to-End Execution Flowchart
+
+```mermaid
+flowchart TD
+    A["Python: test_matmul.py<br/>import jax; JAX_PLATFORMS=paras"] --> B["pyproject.toml entry_points<br/>jax_plugins: paras = jax_paras_plugin"]
+    B --> C["jax_paras_plugin/__init__.py<br/>initialize() -> xb.register_plugin('paras', libpjrt_paras.so)"]
+    C --> D["pjrt_api.cpp: GetPjrtApi()<br/>Returns PJRT_Api table"]
+    D --> E["pjrt_api.cpp: PJRT_Plugin_Initialize & PJRT_Client_Create<br/>-> paras_pjrt_sycl.cpp: init_runtime()"]
+    E --> F["paras_pjrt_sycl.cpp: sycl::device::get_devices(gpu)<br/>Creates in-order sycl::queue per MI300X<br/>-> paras_pjrt_clap.cpp: clap_init_backend() (CLAP_BACKEND=AMD)"]
+
+    F --> G["Python: jnp.asarray(a_np), jnp.asarray(b_np)"]
+    G --> H["pjrt_buffer.cpp: PJRT_Client_BufferFromHostBuffer<br/>-> paras_pjrt_sycl.cpp: sycl::malloc_shared + queue.memcpy(H2D)<br/>-> pjrt_event.cpp: PJRT_Event_OnReady"]
+
+    H --> I["Python: jax.jit(lambda x, y: x @ y.T)(a_jax, b_jax)<br/>JAX traces jaxpr -> lowers to VHLO/StableHLO bytecode (ML\\xefR)"]
+    I --> J["pjrt_compile.cpp: PJRT_Client_Compile<br/>Writes /tmp/paras_pjrt_mlir_XXXXXX<br/>Deserializes VHLO -> MLIR text via stablehlo.deserialize_portable_artifact<br/>Parses shapes, transpose, dot_general -> MatMulPlan"]
+
+    J --> K["pjrt_executable.cpp: PJRT_LoadedExecutable_Execute<br/>Allocates output buffer (sycl::malloc_shared)<br/>-> paras_pjrt_sycl.cpp: gemm_f32()"]
+    K --> L["paras_pjrt_sycl.cpp: queue.wait() (pre-GEMM)<br/>-> paras_pjrt_clap.cpp: clap_gemm_f32_raw()<br/>ColMajor C^T = op(B)^T * op(A)^T via libclap.so<br/>hipDeviceSynchronize() -> queue.wait() (post-GEMM)"]
+
+    L --> M["Python: np.asarray(out)<br/>pjrt_buffer.cpp: PJRT_Buffer_ToHostBuffer (2-phase: dst==nullptr size query, then D2H)<br/>-> paras_pjrt_sycl.cpp: queue.wait() + queue.memcpy(D2H)"]
+    M --> N["Python: np.testing.assert_allclose(out_np, expected) -> PASS"]
 ```
 
 ---
 
-## 3. Build System (`CMakeLists.txt` & `scripts/build_pjrt.sh`)
+## 3. File-to-File Execution Trace
 
-### Two-Compiler Split (`parascc` vs. Host `g++`)
-1. **`parascc` (`CMAKE_CXX_COMPILER=${PARAS_HOME}/bin/parascc`):**
-   Compiles `csrc/paras_pjrt_sycl.cpp` and all `csrc/pjrt_*.cpp` translation units individually into object files. Only `paras_pjrt_sycl.cpp` includes `<sycl/sycl.hpp>`, keeping SYCL types out of headers because `parascc` rewrites the main `.cpp` translation unit rather than included headers.
-2. **Host `g++` (`${PTSYCL_GCC_TOOLCHAIN}/bin/g++`):**
-   Compiles `csrc/paras_pjrt_clap.cpp` via an `add_custom_command` rule into `paras_pjrt_clap.o`, isolating `<clap/blas_factory.hpp>` and vendor runtime headers (`cuda_runtime_api.h` / `hip/hip_runtime_api.h`) from `parascc`.
+### Stage 1: Plugin Discovery & Initialization
+1. **[pyproject.toml](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/pyproject.toml)** registers `paras = "jax_paras_plugin"` under `[project.entry-points."jax_plugins"]`.
+2. **[python/jax_paras_plugin/\_\_init\_\_.py](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/python/jax_paras_plugin/__init__.py)** runs `initialize()`, locates `libpjrt_paras.so`, and calls `xb.register_plugin("paras", priority=500, library_path=..., options=None)`.
+3. **`jaxlib`** `dlopen`s `libpjrt_paras.so` and calls **`GetPjrtApi()`** in **[csrc/pjrt_api.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/pjrt_api.cpp)**.
+4. **`jaxlib`** calls `PJRT_Plugin_Initialize` and `PJRT_Client_Create` in **[csrc/pjrt_api.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/pjrt_api.cpp)**, which calls `paras_pjrt::init_runtime()` in **[csrc/paras_pjrt_sycl.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/paras_pjrt_sycl.cpp)**:
+   - Enumerates GPUs via `sycl::device::get_devices(sycl::info::device_type::gpu)` and creates an in-order `sycl::queue` for each device.
+   - Calls `clap_init_backend()` in **[csrc/paras_pjrt_clap.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/paras_pjrt_clap.cpp)**, setting `CLAP_BACKEND=AMD` (or `CUDA` / `CPU`) if unset and creating `clap::BlasFactory::create()`.
+5. **`jaxlib`** queries `PJRT_Client_TopologyDescription`, `PJRT_TopologyDescription_*`, `PJRT_Client_Devices`, `PJRT_Device_GetDescription`, and `PJRT_Device_DefaultMemory` (all implemented in **[csrc/pjrt_api.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/pjrt_api.cpp)** using `Paras*` opaque backing structs from **[csrc/pjrt_types.hpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/pjrt_types.hpp)**).
 
-### Backend Flavors (`PTSYCL_DEVICE`)
-| `build_pjrt.sh` flavor | `PTSYCL_DEVICE` | Compile Definitions | GPU Runtime Linked |
-|---|---|---|---|
-| `cpu` | `cpu` | `PARAS_PJRT_BACKEND_CPU` | None |
-| `cuda` | `sycl:cuda:sm_XX` | `PARAS_PJRT_BACKEND_SYCL`, `PARAS_PJRT_CUDA` | `libcudart` (from `PTSYCL_CUDA_HOME`) |
-| `hip` | `sycl:hip:gfxXXX` | `PARAS_PJRT_BACKEND_SYCL`, `PARAS_PJRT_HIP` | `libamdhip64` (if found under `PTSYCL_ROCM_HOME`) |
+### Stage 2: Host-to-Device Input Placement (`jnp.asarray`)
+1. **`jaxlib`** calls `PJRT_Client_BufferFromHostBuffer` in **[csrc/pjrt_buffer.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/pjrt_buffer.cpp)**.
+2. `paras_pjrt::alloc_device()` in **[csrc/paras_pjrt_sycl.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/paras_pjrt_sycl.cpp)** allocates USM via `sycl::malloc_shared<std::byte>(nbytes, *slot->queue)`.
+3. Non-contiguous host arrays are packed if needed; `paras_pjrt::copy_h2d()` copies to USM via `queue->memcpy(...)` + `queue->wait()`.
+4. Returns a `PJRT_Buffer*` (`ParasBuffer`) and a ready `PJRT_Event*` (`ParasEvent`), whose `PJRT_Event_OnReady` callback in **[csrc/pjrt_event.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/pjrt_event.cpp)** fires immediately.
 
-### Verification Checks in `build_pjrt.sh`
-After building with `-- -j1` and copying `libpjrt_paras.so` to `python/jax_paras_plugin/libpjrt_paras.so`, `build_pjrt.sh` runs:
-- `ldd libpjrt_paras.so | grep -E "libtorch|libc10"` (fails if any PyTorch library is linked).
-- `nm -D libpjrt_paras.so | grep GetPjrtApi` (verifies the PJRT entry symbol is exported).
+### Stage 3: Graph Compilation (`jax.jit` → `PJRT_Client_Compile`)
+1. `jaxlib` checks `PJRT_Device_MemoryStats` in **[csrc/pjrt_api.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/pjrt_api.cpp)** and calls `PJRT_Client_Compile` in **[csrc/pjrt_compile.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/pjrt_compile.cpp)** with a serialized VHLO/StableHLO bytecode payload (`ML\xefR`).
+2. `deserialize_mlir_bytecode()` writes `/tmp/paras_pjrt_mlir_XXXXXX`, invokes `JAX_PLATFORMS=cpu python` with `mlir.make_ir_context()` + `stablehlo.deserialize_portable_artifact(ctx, data)` (or `stablehlo-translate` / `mlir-opt` if present), and unlinks the temp file.
+3. `parse_stablehlo_matmul()` extracts `tensor<DxDxf32>` shapes, `stablehlo.dot_general` `contracting_dims`, and any `stablehlo.transpose` on `%arg0`/`%arg1`, producing a `MatMulPlan` (`m`, `n`, `k`, `trans_a`, `trans_b`, `out_dims`) inside `ParasLoadedExecutable`.
+4. `jaxlib` queries `PJRT_Executable_NumOutputs`, `NumReplicas`, `NumPartitions`, `ParameterMemoryKinds`, `OutputMemoryKinds`, and `OptimizedProgram` (returns `UNIMPLEMENTED`, handled gracefully by `jaxlib`) in **[csrc/pjrt_executable.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/pjrt_executable.cpp)**.
 
----
-
-## 4. Runtime Components
-
-### 4.1 SYCL Queue & USM Memory (`paras_pjrt_sycl.hpp` / `paras_pjrt_sycl.cpp`)
-- `paras_pjrt::init_runtime()` enumerates `sycl::device::get_devices(sycl::info::device_type::gpu)` under `PARAS_PJRT_BACKEND_SYCL`, creates an in-order `sycl::queue` (`sycl::property::queue::in_order{}`) per GPU, and initializes CLAP via `clap_init_backend()`. If no GPU is present (or in CPU mode), it registers a single `"ParaS CPU Fallback"` device using `posix_memalign` / `std::memcpy`.
-- `alloc_device()` / `free_device()` use `sycl::malloc_shared<std::byte>` and `sycl::free` on GPU devices.
-- `copy_h2d()`, `copy_d2h()`, `copy_d2d()`, and `memset_device()` wrap `sycl::queue::memcpy` / `memset` and `wait()`.
-- `gemm_f32()` synchronizes the SYCL queue (`synchronize_device()`) **before** and **after** calling `clap_gemm_f32_raw()` so pending H2D transfers are visible to CLAP and results are complete before D2H copies.
-
-### 4.2 CLAP-BLAS Wrapper (`paras_pjrt_clap.cpp`)
-- **Backend Selection:** `ensure_clap_backend_env()` sets `CLAP_BACKEND` (only if not already set by the user) to `"CUDA"`, `"AMD"` (note: CLAP recognizes `"AMD"`, not `"ROCM"`), or `"CPU"`, avoiding reliance on `/proc/self/cmdline` flags (`-cuda`, `-rocm`, `-cpu`).
-- **Row-Major to Column-Major GEMM Mapping:**
-  JAX tensors are row-major. To compute row-major $C_{M \times N} = \text{op}_A(A) \cdot \text{op}_B(B)$, `clap_gemm_f32_raw()` invokes `backend->gemm(clap::Layout::ColMajor, ...)` using the transpose identity:
-  $$C^T_{N \times M} = (\text{op}_B(B))^T_{N \times K} \cdot (\text{op}_A(A))^T_{K \times M}$$
-  - `m_col = n`, `n_col = m`, `k_col = k`
-  - First operand: `b` with `first_trans = trans_b ? Trans : NoTrans`, `lda = trans_b ? k : n`
-  - Second operand: `a` with `second_trans = trans_a ? Trans : NoTrans`, `ldb = trans_a ? m : k`
-  - Output: `c` with `ldc = n`
-- **Device Synchronization:** After `backend->gemm(...)`, `clap_gemm_f32_raw()` calls `cudaDeviceSynchronize()` (when `PARAS_PJRT_CUDA` is defined) or `hipDeviceSynchronize()` (when `PARAS_PJRT_HIP` is defined) so asynchronous vendor BLAS kernels finish before `PJRT_Buffer_ToHostBuffer` reads the output buffer.
-
-### 4.3 PJRT C-API Implementation (`pjrt_types.hpp`, `pjrt_*.cpp`)
-- **`pjrt_event.cpp`:** Implements `PJRT_Event_Destroy`, `PJRT_Event_IsReady`, `PJRT_Event_Error`, `PJRT_Event_Await`, and `PJRT_Event_OnReady`. `event_on_ready` always invokes `args->callback(err_copy, args->user_arg)` immediately if the event is already ready.
-- **`pjrt_buffer.cpp`:**
-  - `client_buffer_from_host_buffer`: Allocates USM/host memory, packs non-contiguous strided host inputs if `byte_strides` are non-contiguous, copies H2D, and returns a `PJRT_Buffer*` plus a ready `PJRT_Event*`.
-  - `buffer_to_host_buffer`: Handles PJRT's two-phase size query (`if (args->dst == nullptr) { args->dst_size = buf->byte_size; return nullptr; }`) and copies D2H on the second call.
-  - Implements `Delete`/`Destroy`, `CopyToDevice`, `GetMemoryLayout` (row-major `minor_to_major`), `OnDeviceSizeInBytes`, `UnsafePointer`, `IsOnCpu` (`false`), and `ReadyEvent`.
-- **`pjrt_compile.cpp`:**
-  - Accepts `PJRT_Program` code in MLIR text or MLIR bytecode (`ML\xefR`).
-  - For MLIR bytecode, writes a temporary file and attempts deserialization via `stablehlo-translate --deserialize` or `mlir-opt --allow-unregistered-dialect` on `PATH`. Setting `PARAS_PJRT_DUMP_MLIR=1` prints the deserialized MLIR to `stderr`.
-  - Parses 2D `tensor<...xf32>` shapes, `stablehlo.dot_general` / `stablehlo.dot` contracting dimensions (`contracting_dims = [a] x [b]` or `lhs_contracting_dimensions` / `rhs_contracting_dimensions`), and optional `stablehlo.transpose` on `%arg0` / `%arg1` into a `MatMulPlan` (`m`, `n`, `k`, `trans_a`, `trans_b`, `out_dims`).
-- **`pjrt_executable.cpp`:**
-  - `loaded_executable_execute` validates single-device execution (`num_devices == 1`), 2 `float32` input buffers, allocates the output `PJRT_Buffer` (`M * N * sizeof(float)`), handles `k == 0` via `memset_device(..., 0)`, otherwise dispatches `paras_pjrt::gemm_f32(...)`, and populates `output_lists[0][0]` and `device_complete_events[0]`.
-- **`pjrt_api.cpp`:**
-  - Implements `PJRT_Error_*`, `PJRT_Plugin_*`, `PJRT_Client_*`, `PJRT_DeviceDescription_*`, `PJRT_Device_*`, and `PJRT_Memory_*`.
-  - Exports `extern "C" __attribute__((visibility("default"))) const PJRT_Api* GetPjrtApi()` with `PJRT_Api_STRUCT_SIZE`, `PJRT_Api_Version_STRUCT_SIZE`, `PJRT_API_MAJOR`, and `PJRT_API_MINOR` from `pjrt_c_api.h`.
+### Stage 4: Execution & Output Retrieval (`PJRT_LoadedExecutable_Execute` → `ToHostBuffer`)
+1. `loaded_executable_execute()` in **[csrc/pjrt_executable.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/pjrt_executable.cpp)** allocates the output `ParasBuffer` (`M * N * sizeof(float)`) via `paras_pjrt::alloc_device()`.
+2. Calls `paras_pjrt::gemm_f32()` in **[csrc/paras_pjrt_sycl.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/paras_pjrt_sycl.cpp)**:
+   - Calls `synchronize_device()` (`sycl::queue::wait()`).
+   - Calls `clap_gemm_f32_raw()` in **[csrc/paras_pjrt_clap.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/paras_pjrt_clap.cpp)**:
+     - Computes row-major $C_{M \times N} = \text{op}_A(A) \cdot \text{op}_B(B)$ via `backend->gemm(clap::Layout::ColMajor, ...)` as $C^T_{N \times M} = \text{op}_B(B)^T \cdot \text{op}_A(A)^T$.
+     - Synchronizes the vendor runtime via `hipDeviceSynchronize()` (or `cudaDeviceSynchronize()`).
+   - Calls `synchronize_device()` (`sycl::queue::wait()`).
+3. On `np.asarray(out)`, `jaxlib` calls `PJRT_Buffer_ToHostBuffer` in **[csrc/pjrt_buffer.cpp](file:///home/kilaruvd/Framework-Torch-ParaS/pjrt_plugin/csrc/pjrt_buffer.cpp)** twice:
+   - Pass 1 (`dst == nullptr`): returns `dst_size = buf->byte_size`.
+   - Pass 2 (`dst != nullptr`): calls `paras_pjrt::copy_d2h()` (`queue.wait()`, `queue.memcpy(D2H)`, `queue.wait()`) and returns a ready `PJRT_Event*`.
 
 ---
 
-## 5. Python Plugin & Tests
+## 4. Build Split & Key Technical Lessons from v0.1
 
-- **`python/jax_paras_plugin/__init__.py`:** Locates `libpjrt_paras.so` (via `PJRT_PARAS_LIBRARY_PATH` or alongside `__init__.py`) and calls `jax._src.xla_bridge.register_plugin("paras", priority=500, library_path=plugin_path, options=None)`.
-- **`tests/test_matmul.py`:** Sets `XLA_PYTHON_CLIENT_PREALLOCATE=false` and `JAX_PLATFORMS=paras`, verifies `jax.devices()` exposes a `paras` device, and compares `jax.jit` MatMul against `np.matmul` (`rtol=1e-4, atol=1e-4`) over 3 iterations for `(64, 64) @ (64, 64)`, `(128, 256) @ (256, 64)`, and `(128, 256) @ (64, 256).T`.
+| File | Compiler | Reason |
+|---|---|---|
+| `csrc/paras_pjrt_sycl.cpp` | `parascc` (`-j1`) | Owns `<sycl/sycl.hpp>` (`sycl::queue`, `sycl::malloc_shared`); `parascc` rewrites main `.cpp` translation units, not headers. |
+| `csrc/pjrt_*.cpp` | `parascc` (`-j1`) | Pure C++ implementing `pjrt_c_api.h` using `Paras*` opaque structs (avoids `PJRT_Error` / `PJRT_Memory` struct redefinitions in `pjrt_c_api.h`). |
+| `csrc/paras_pjrt_clap.cpp` | Host `g++` | Isolates `<clap/blas_factory.hpp>` from `parascc` and forward-declares `hipDeviceSynchronize()` / `cudaDeviceSynchronize()` to avoid `clap/blas/types.hpp` enum/typedef collisions with `hip_runtime_api.h`. |
 
 ---
 
-## 6. Known v0.1 Scope & Limitations
+## 5. Future Direction: v0.1 → v1.0
 
-- Supports single-device 2D `float32` MatMul (`dot_general` / `dot` with optional input transpose) only.
-- `pjrt_c_api.h` is not vendored in git; it must be fetched via `scripts/fetch_pjrt_header.sh` to match the target node's `jaxlib` PJRT API version.
-- MLIR bytecode (`ML\xefR`) deserialization in `pjrt_compile.cpp` requires `stablehlo-translate` or `mlir-opt` on `PATH`.
+1. **In-Process StableHLO / MLIR C++ Parsing (Remove Subprocess):**
+   - Replace the `popen` + `python` / `/tmp/paras_pjrt_mlir_XXXXXX` deserialization in `pjrt_compile.cpp` with in-process MLIR/StableHLO C++ linking (or a lightweight C++ VHLO/StableHLO reader) to eliminate cold-compile latency and remove the runtime `python`/`stablehlo-translate` dependency.
+2. **Memory Pool & Device-Only Allocations:**
+   - Port the `MemoryPool` caching pattern from `csrc/core/allocator.cpp` and switch from `sycl::malloc_shared` to `sycl::malloc_device` for non-host-visible intermediates, reducing allocation overhead and PCIe/XGMI traffic.
+3. **Async Execution & Real `PJRT_Event` Integration:**
+   - Replace synchronous `queue.wait()` + `hipDeviceSynchronize()` around every GEMM with stream-ordered execution and async `PJRT_Event` completion callbacks so JAX can overlap H2D, compute, and D2H.
+4. **Multi-Op StableHLO Support (CLAP + SYCL + Triton):**
+   - **CLAP-BLAS & CLAP-DNN:** Lower `dot_general` (batched, `fp16`/`bf16`/`fp64`), `convolution`, `batch_norm` to `libclap`.
+   - **ParaS SYCL Kernels:** Lower standalone elementwise/reduction/indexing ops to SYCL kernels compiled with `parascc`.
+   - **Triton (`clap-triton` / `jax-triton`):** Add a vendor kernel-launcher in `CLAP-Library` (`cuModuleLaunchKernel` / `hipModuleLaunchKernel`) to execute Triton-compiled `.cubin`/`.hsaco` fused kernels and `stablehlo.custom_call` directly on ParaS USM buffers.
+5. **Repo & Packaging Architecture (`torch-ai-paras` / MCA Route):**
+   - Extract the shared ParaS SYCL runtime + memory pool + CLAP adapters into a framework-agnostic C++ core (`libparas_ai_core.so`), with **zero-cross-linkage** thin frontends:
+     - PyTorch frontend (`_C.so`)
+     - JAX PJRT frontend (`libpjrt_paras.so` in standalone `Framework-JAX-ParaS` or unified `torch-ai-paras` workspace)
+6. **Multi-GPU & Collectives:**
+   - Expose all 8 MI300X GPUs for `pmap` / `pjit` (`num_devices > 1` in `PJRT_LoadedExecutable_Execute`) and integrate RCCL/NCCL for `all_reduce` / `all_gather`.
