@@ -30,6 +30,22 @@ PJRT_Error* executable_num_outputs(PJRT_Executable_NumOutputs_Args* args) {
     return nullptr;
 }
 
+PJRT_Error* executable_num_replicas(PJRT_Executable_NumReplicas_Args* args) {
+    if (!args || !args->executable) {
+        return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null executable");
+    }
+    args->num_replicas = 1;
+    return nullptr;
+}
+
+PJRT_Error* executable_num_partitions(PJRT_Executable_NumPartitions_Args* args) {
+    if (!args || !args->executable) {
+        return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null executable");
+    }
+    args->num_partitions = 1;
+    return nullptr;
+}
+
 PJRT_Error* executable_size_of_generated_code(PJRT_Executable_SizeOfGeneratedCodeInBytes_Args* args) {
     if (!args || !args->executable) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null executable");
@@ -69,6 +85,24 @@ PJRT_Error* executable_output_memory_kinds(PJRT_Executable_OutputMemoryKinds_Arg
     args->memory_kinds = &kDeviceMemKind;
     args->memory_kind_sizes = &kDeviceMemKindSize;
     return nullptr;
+}
+
+PJRT_Error* executable_parameter_memory_kinds(PJRT_Executable_ParameterMemoryKinds_Args* args) {
+    if (!args || !args->executable) {
+        return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null executable");
+    }
+    static const char* kParamMemKinds[2] = {"device", "device"};
+    static const std::size_t kParamMemKindSizes[2] = {6, 6};
+    args->num_parameters = 2;
+    args->memory_kinds = kParamMemKinds;
+    args->memory_kind_sizes = kParamMemKindSizes;
+    return nullptr;
+}
+
+PJRT_Error* executable_optimized_program(PJRT_Executable_OptimizedProgram_Args* args) {
+    (void)args;
+    return make_pjrt_error(PJRT_Error_Code_UNIMPLEMENTED,
+                           "PJRT_Executable_OptimizedProgram is not implemented in v0.1");
 }
 
 PJRT_Error* executable_fingerprint(PJRT_Executable_Fingerprint_Args* args) {
@@ -217,6 +251,13 @@ PJRT_Error* loaded_executable_execute(PJRT_LoadedExecutable_Execute_Args* args) 
         args->device_complete_events[0] = make_ready_event();
     }
     return nullptr;
+}
+
+PJRT_Error* loaded_executable_get_device_assignment(
+    PJRT_LoadedExecutable_GetDeviceAssignment_Args* args) {
+    (void)args;
+    return make_pjrt_error(PJRT_Error_Code_UNIMPLEMENTED,
+                           "GetDeviceAssignment not implemented in v0.1");
 }
 
 } // namespace paras_pjrt_api

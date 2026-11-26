@@ -500,11 +500,15 @@ PJRT_Api build_pjrt_api() {
     api.PJRT_Executable_Destroy = paras_pjrt_api::executable_destroy;
     api.PJRT_Executable_Name = paras_pjrt_api::executable_name;
     api.PJRT_Executable_NumOutputs = paras_pjrt_api::executable_num_outputs;
+    api.PJRT_Executable_NumReplicas = paras_pjrt_api::executable_num_replicas;
+    api.PJRT_Executable_NumPartitions = paras_pjrt_api::executable_num_partitions;
     api.PJRT_Executable_SizeOfGeneratedCodeInBytes =
         paras_pjrt_api::executable_size_of_generated_code;
     api.PJRT_Executable_OutputElementTypes = paras_pjrt_api::executable_output_element_types;
     api.PJRT_Executable_OutputDimensions = paras_pjrt_api::executable_output_dimensions;
     api.PJRT_Executable_OutputMemoryKinds = paras_pjrt_api::executable_output_memory_kinds;
+    api.PJRT_Executable_ParameterMemoryKinds = paras_pjrt_api::executable_parameter_memory_kinds;
+    api.PJRT_Executable_OptimizedProgram = paras_pjrt_api::executable_optimized_program;
     api.PJRT_Executable_Fingerprint = paras_pjrt_api::executable_fingerprint;
     api.PJRT_Executable_GetCostAnalysis = paras_pjrt_api::executable_get_cost_analysis;
     api.PJRT_Executable_GetCompiledMemoryStats =
@@ -517,6 +521,8 @@ PJRT_Api build_pjrt_api() {
     api.PJRT_LoadedExecutable_Delete = paras_pjrt_api::loaded_executable_delete;
     api.PJRT_LoadedExecutable_IsDeleted = paras_pjrt_api::loaded_executable_is_deleted;
     api.PJRT_LoadedExecutable_Execute = paras_pjrt_api::loaded_executable_execute;
+    api.PJRT_LoadedExecutable_GetDeviceAssignment =
+        paras_pjrt_api::loaded_executable_get_device_assignment;
 
     api.PJRT_Buffer_Destroy = paras_pjrt_api::buffer_destroy;
     api.PJRT_Buffer_ElementType = paras_pjrt_api::buffer_element_type;

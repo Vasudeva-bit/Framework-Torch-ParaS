@@ -173,10 +173,14 @@ PJRT_Error* client_compile(PJRT_Client_Compile_Args* args);
 PJRT_Error* executable_destroy(PJRT_Executable_Destroy_Args* args);
 PJRT_Error* executable_name(PJRT_Executable_Name_Args* args);
 PJRT_Error* executable_num_outputs(PJRT_Executable_NumOutputs_Args* args);
+PJRT_Error* executable_num_replicas(PJRT_Executable_NumReplicas_Args* args);
+PJRT_Error* executable_num_partitions(PJRT_Executable_NumPartitions_Args* args);
 PJRT_Error* executable_size_of_generated_code(PJRT_Executable_SizeOfGeneratedCodeInBytes_Args* args);
 PJRT_Error* executable_output_element_types(PJRT_Executable_OutputElementTypes_Args* args);
 PJRT_Error* executable_output_dimensions(PJRT_Executable_OutputDimensions_Args* args);
 PJRT_Error* executable_output_memory_kinds(PJRT_Executable_OutputMemoryKinds_Args* args);
+PJRT_Error* executable_parameter_memory_kinds(PJRT_Executable_ParameterMemoryKinds_Args* args);
+PJRT_Error* executable_optimized_program(PJRT_Executable_OptimizedProgram_Args* args);
 PJRT_Error* executable_fingerprint(PJRT_Executable_Fingerprint_Args* args);
 PJRT_Error* executable_get_cost_analysis(PJRT_Executable_GetCostAnalysis_Args* args);
 PJRT_Error* executable_get_compiled_memory_stats(PJRT_Executable_GetCompiledMemoryStats_Args* args);
@@ -186,5 +190,6 @@ PJRT_Error* loaded_executable_addressable_devices(PJRT_LoadedExecutable_Addressa
 PJRT_Error* loaded_executable_delete(PJRT_LoadedExecutable_Delete_Args* args);
 PJRT_Error* loaded_executable_is_deleted(PJRT_LoadedExecutable_IsDeleted_Args* args);
 PJRT_Error* loaded_executable_execute(PJRT_LoadedExecutable_Execute_Args* args);
+PJRT_Error* loaded_executable_get_device_assignment(PJRT_LoadedExecutable_GetDeviceAssignment_Args* args);
 
 } // namespace paras_pjrt_api
