@@ -321,7 +321,7 @@ PJRT_Error* buffer_unsafe_pointer(PJRT_Buffer_UnsafePointer_Args* args) {
     if (!args || !args->buffer) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null buffer");
     }
-    args->unsafe_pointer = reinterpret_cast<uintptr_t>(as_impl(args->buffer)->data);
+    args->buffer_pointer = reinterpret_cast<uintptr_t>(as_impl(args->buffer)->data);
     return nullptr;
 }
 
