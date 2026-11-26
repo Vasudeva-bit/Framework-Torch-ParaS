@@ -13,20 +13,21 @@ namespace {
 // -----------------------------------------------------------------------------
 void error_destroy(PJRT_Error_Destroy_Args* args) {
     if (!args || !args->error) return;
-    delete args->error;
+    delete as_impl(args->error);
 }
 
 void error_message(PJRT_Error_Message_Args* args) {
     if (!args || !args->error) return;
-    args->message = args->error->message.c_str();
-    args->message_size = args->error->message.size();
+    const ParasError* err = as_impl(args->error);
+    args->message = err->message.c_str();
+    args->message_size = err->message.size();
 }
 
 PJRT_Error* error_get_code(PJRT_Error_GetCode_Args* args) {
     if (!args || !args->error) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null error");
     }
-    args->code = args->error->code;
+    args->code = as_impl(args->error)->code;
     return nullptr;
 }
 
@@ -60,13 +61,13 @@ PJRT_Error* client_create(PJRT_Client_Create_Args* args) {
         return make_pjrt_error(PJRT_Error_Code_INTERNAL, err_msg);
     }
 
-    auto client = std::make_unique<PJRT_Client>();
+    auto client = std::make_unique<ParasClient>();
     const int count = paras_pjrt::device_count();
     for (int i = 0; i < count; ++i) {
         paras_pjrt::ParasDeviceInfo info;
         paras_pjrt::get_device_info(i, &info);
 
-        auto dev = std::make_unique<PJRT_Device>();
+        auto dev = std::make_unique<ParasDevice>();
         dev->client = client.get();
         dev->local_hardware_id = i;
         dev->description.id = i;
@@ -79,7 +80,7 @@ PJRT_Error* client_create(PJRT_Client_Create_Args* args) {
             dev->description.to_string = os.str();
         }
 
-        auto mem = std::make_unique<PJRT_Memory>();
+        auto mem = std::make_unique<ParasMemory>();
         mem->id = i;
         mem->kind = "device";
         mem->kind_id = 0;
@@ -92,19 +93,19 @@ PJRT_Error* client_create(PJRT_Client_Create_Args* args) {
         }
 
         dev->default_memory = mem.get();
-        client->device_ptrs.push_back(dev.get());
-        client->memory_ptrs.push_back(mem.get());
+        client->device_ptrs.push_back(to_pjrt(dev.get()));
+        client->memory_ptrs.push_back(to_pjrt(mem.get()));
         client->devices.push_back(std::move(dev));
         client->memories.push_back(std::move(mem));
     }
 
-    args->client = client.release();
+    args->client = to_pjrt(client.release());
     return nullptr;
 }
 
 PJRT_Error* client_destroy(PJRT_Client_Destroy_Args* args) {
     if (!args || !args->client) return nullptr;
-    delete args->client;
+    delete as_impl(args->client);
     return nullptr;
 }
 
@@ -112,8 +113,9 @@ PJRT_Error* client_platform_name(PJRT_Client_PlatformName_Args* args) {
     if (!args || !args->client) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null client");
     }
-    args->platform_name = args->client->platform_name.c_str();
-    args->platform_name_size = args->client->platform_name.size();
+    ParasClient* client = as_impl(args->client);
+    args->platform_name = client->platform_name.c_str();
+    args->platform_name_size = client->platform_name.size();
     return nullptr;
 }
 
@@ -121,7 +123,7 @@ PJRT_Error* client_process_index(PJRT_Client_ProcessIndex_Args* args) {
     if (!args || !args->client) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null client");
     }
-    args->process_index = args->client->process_index;
+    args->process_index = as_impl(args->client)->process_index;
     return nullptr;
 }
 
@@ -129,8 +131,9 @@ PJRT_Error* client_platform_version(PJRT_Client_PlatformVersion_Args* args) {
     if (!args || !args->client) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null client");
     }
-    args->platform_version = args->client->platform_version.c_str();
-    args->platform_version_size = args->client->platform_version.size();
+    ParasClient* client = as_impl(args->client);
+    args->platform_version = client->platform_version.c_str();
+    args->platform_version_size = client->platform_version.size();
     return nullptr;
 }
 
@@ -138,8 +141,9 @@ PJRT_Error* client_devices(PJRT_Client_Devices_Args* args) {
     if (!args || !args->client) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null client");
     }
-    args->devices = args->client->device_ptrs.data();
-    args->num_devices = args->client->device_ptrs.size();
+    ParasClient* client = as_impl(args->client);
+    args->devices = client->device_ptrs.data();
+    args->num_devices = client->device_ptrs.size();
     return nullptr;
 }
 
@@ -147,8 +151,9 @@ PJRT_Error* client_addressable_devices(PJRT_Client_AddressableDevices_Args* args
     if (!args || !args->client) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null client");
     }
-    args->addressable_devices = args->client->device_ptrs.data();
-    args->num_addressable_devices = args->client->device_ptrs.size();
+    ParasClient* client = as_impl(args->client);
+    args->addressable_devices = client->device_ptrs.data();
+    args->num_addressable_devices = client->device_ptrs.size();
     return nullptr;
 }
 
@@ -156,10 +161,11 @@ PJRT_Error* client_lookup_device(PJRT_Client_LookupDevice_Args* args) {
     if (!args || !args->client) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null client");
     }
-    if (args->id < 0 || static_cast<std::size_t>(args->id) >= args->client->device_ptrs.size()) {
+    ParasClient* client = as_impl(args->client);
+    if (args->id < 0 || static_cast<std::size_t>(args->id) >= client->device_ptrs.size()) {
         return make_pjrt_error(PJRT_Error_Code_NOT_FOUND, "device id not found");
     }
-    args->device = args->client->device_ptrs[static_cast<std::size_t>(args->id)];
+    args->device = client->device_ptrs[static_cast<std::size_t>(args->id)];
     return nullptr;
 }
 
@@ -167,12 +173,13 @@ PJRT_Error* client_lookup_addressable_device(PJRT_Client_LookupAddressableDevice
     if (!args || !args->client) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null client");
     }
+    ParasClient* client = as_impl(args->client);
     if (args->local_hardware_id < 0 ||
-        static_cast<std::size_t>(args->local_hardware_id) >= args->client->device_ptrs.size()) {
+        static_cast<std::size_t>(args->local_hardware_id) >= client->device_ptrs.size()) {
         return make_pjrt_error(PJRT_Error_Code_NOT_FOUND, "local_hardware_id not found");
     }
     args->addressable_device =
-        args->client->device_ptrs[static_cast<std::size_t>(args->local_hardware_id)];
+        client->device_ptrs[static_cast<std::size_t>(args->local_hardware_id)];
     return nullptr;
 }
 
@@ -180,8 +187,9 @@ PJRT_Error* client_addressable_memories(PJRT_Client_AddressableMemories_Args* ar
     if (!args || !args->client) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null client");
     }
-    args->addressable_memories = args->client->memory_ptrs.data();
-    args->num_addressable_memories = args->client->memory_ptrs.size();
+    ParasClient* client = as_impl(args->client);
+    args->addressable_memories = client->memory_ptrs.data();
+    args->num_addressable_memories = client->memory_ptrs.size();
     return nullptr;
 }
 
@@ -202,7 +210,7 @@ PJRT_Error* device_desc_id(PJRT_DeviceDescription_Id_Args* args) {
     if (!args || !args->device_description) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null device_description");
     }
-    args->id = args->device_description->id;
+    args->id = as_impl(args->device_description)->id;
     return nullptr;
 }
 
@@ -210,7 +218,7 @@ PJRT_Error* device_desc_process_index(PJRT_DeviceDescription_ProcessIndex_Args* 
     if (!args || !args->device_description) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null device_description");
     }
-    args->process_index = args->device_description->process_index;
+    args->process_index = as_impl(args->device_description)->process_index;
     return nullptr;
 }
 
@@ -227,8 +235,9 @@ PJRT_Error* device_desc_kind(PJRT_DeviceDescription_Kind_Args* args) {
     if (!args || !args->device_description) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null device_description");
     }
-    args->device_kind = args->device_description->kind.c_str();
-    args->device_kind_size = args->device_description->kind.size();
+    ParasDeviceDescription* desc = as_impl(args->device_description);
+    args->device_kind = desc->kind.c_str();
+    args->device_kind_size = desc->kind.size();
     return nullptr;
 }
 
@@ -236,8 +245,9 @@ PJRT_Error* device_desc_debug_string(PJRT_DeviceDescription_DebugString_Args* ar
     if (!args || !args->device_description) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null device_description");
     }
-    args->debug_string = args->device_description->debug_string.c_str();
-    args->debug_string_size = args->device_description->debug_string.size();
+    ParasDeviceDescription* desc = as_impl(args->device_description);
+    args->debug_string = desc->debug_string.c_str();
+    args->debug_string_size = desc->debug_string.size();
     return nullptr;
 }
 
@@ -245,8 +255,9 @@ PJRT_Error* device_desc_to_string(PJRT_DeviceDescription_ToString_Args* args) {
     if (!args || !args->device_description) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null device_description");
     }
-    args->to_string = args->device_description->to_string.c_str();
-    args->to_string_size = args->device_description->to_string.size();
+    ParasDeviceDescription* desc = as_impl(args->device_description);
+    args->to_string = desc->to_string.c_str();
+    args->to_string_size = desc->to_string.size();
     return nullptr;
 }
 
@@ -254,7 +265,7 @@ PJRT_Error* device_get_description(PJRT_Device_GetDescription_Args* args) {
     if (!args || !args->device) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null device");
     }
-    args->device_description = &args->device->description;
+    args->device_description = to_pjrt(&as_impl(args->device)->description);
     return nullptr;
 }
 
@@ -270,7 +281,7 @@ PJRT_Error* device_local_hardware_id(PJRT_Device_LocalHardwareId_Args* args) {
     if (!args || !args->device) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null device");
     }
-    args->local_hardware_id = args->device->local_hardware_id;
+    args->local_hardware_id = as_impl(args->device)->local_hardware_id;
     return nullptr;
 }
 
@@ -278,7 +289,10 @@ PJRT_Error* device_addressable_memories(PJRT_Device_AddressableMemories_Args* ar
     if (!args || !args->device) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null device");
     }
-    args->memories = &args->device->default_memory;
+    ParasDevice* dev = as_impl(args->device);
+    static thread_local PJRT_Memory* mem_ptr = nullptr;
+    mem_ptr = to_pjrt(dev->default_memory);
+    args->memories = &mem_ptr;
     args->num_memories = 1;
     return nullptr;
 }
@@ -287,7 +301,7 @@ PJRT_Error* device_default_memory(PJRT_Device_DefaultMemory_Args* args) {
     if (!args || !args->device) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null device");
     }
-    args->memory = args->device->default_memory;
+    args->memory = to_pjrt(as_impl(args->device)->default_memory);
     return nullptr;
 }
 
@@ -298,7 +312,7 @@ PJRT_Error* memory_id(PJRT_Memory_Id_Args* args) {
     if (!args || !args->memory) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null memory");
     }
-    args->id = args->memory->id;
+    args->id = as_impl(args->memory)->id;
     return nullptr;
 }
 
@@ -306,8 +320,9 @@ PJRT_Error* memory_kind(PJRT_Memory_Kind_Args* args) {
     if (!args || !args->memory) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null memory");
     }
-    args->kind = args->memory->kind.c_str();
-    args->kind_size = args->memory->kind.size();
+    ParasMemory* mem = as_impl(args->memory);
+    args->kind = mem->kind.c_str();
+    args->kind_size = mem->kind.size();
     return nullptr;
 }
 
@@ -315,7 +330,7 @@ PJRT_Error* memory_kind_id(PJRT_Memory_Kind_Id_Args* args) {
     if (!args || !args->memory) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null memory");
     }
-    args->kind_id = args->memory->kind_id;
+    args->kind_id = as_impl(args->memory)->kind_id;
     return nullptr;
 }
 
@@ -323,8 +338,9 @@ PJRT_Error* memory_debug_string(PJRT_Memory_DebugString_Args* args) {
     if (!args || !args->memory) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null memory");
     }
-    args->debug_string = args->memory->debug_string.c_str();
-    args->debug_string_size = args->memory->debug_string.size();
+    ParasMemory* mem = as_impl(args->memory);
+    args->debug_string = mem->debug_string.c_str();
+    args->debug_string_size = mem->debug_string.size();
     return nullptr;
 }
 
@@ -332,8 +348,9 @@ PJRT_Error* memory_to_string(PJRT_Memory_ToString_Args* args) {
     if (!args || !args->memory) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null memory");
     }
-    args->to_string = args->memory->to_string.c_str();
-    args->to_string_size = args->memory->to_string.size();
+    ParasMemory* mem = as_impl(args->memory);
+    args->to_string = mem->to_string.c_str();
+    args->to_string_size = mem->to_string.size();
     return nullptr;
 }
 
@@ -341,7 +358,10 @@ PJRT_Error* memory_addressable_by_devices(PJRT_Memory_AddressableByDevices_Args*
     if (!args || !args->memory) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null memory");
     }
-    args->devices = &args->memory->device;
+    ParasMemory* mem = as_impl(args->memory);
+    static thread_local PJRT_Device* dev_ptr = nullptr;
+    dev_ptr = to_pjrt(mem->device);
+    args->devices = &dev_ptr;
     args->num_devices = 1;
     return nullptr;
 }

@@ -206,7 +206,8 @@ PJRT_Error* client_compile(PJRT_Client_Compile_Args* args) {
     if (!args || !args->client || !args->program) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "invalid Compile args");
     }
-    if (args->client->device_ptrs.empty()) {
+    ParasClient* client = as_impl(args->client);
+    if (client->device_ptrs.empty()) {
         return make_pjrt_error(PJRT_Error_Code_FAILED_PRECONDITION, "no devices available");
     }
 
@@ -236,18 +237,18 @@ PJRT_Error* client_compile(PJRT_Client_Compile_Args* args) {
         return make_pjrt_error(PJRT_Error_Code_UNIMPLEMENTED, err_msg);
     }
 
-    auto exec = std::make_unique<PJRT_Executable>();
+    auto exec = std::make_unique<ParasExecutable>();
     exec->plan = plan;
     exec->output_types = {PJRT_Buffer_Type_F32};
     exec->output_dims = plan.out_dims;
     exec->output_dim_sizes = {plan.out_dims.size()};
 
-    auto* loaded = new PJRT_LoadedExecutable();
-    loaded->client = args->client;
+    auto* loaded = new ParasLoadedExecutable();
+    loaded->client = client;
     loaded->executable = std::move(exec);
-    loaded->addressable_devices = {args->client->device_ptrs[0]};
+    loaded->addressable_devices = {client->device_ptrs[0]};
 
-    args->executable = loaded;
+    args->executable = to_pjrt(loaded);
     return nullptr;
 }
 

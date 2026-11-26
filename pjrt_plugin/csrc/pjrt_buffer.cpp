@@ -2,7 +2,6 @@
 #include "paras_pjrt_sycl.hpp"
 
 #include <cstring>
-#include <numeric>
 #include <vector>
 
 namespace paras_pjrt_api {
@@ -80,12 +79,13 @@ PJRT_Error* client_buffer_from_host_buffer(PJRT_Client_BufferFromHostBuffer_Args
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "invalid BufferFromHostBuffer args");
     }
 
-    PJRT_Device* device = args->device;
+    ParasClient* client = as_impl(args->client);
+    ParasDevice* device = args->device ? as_impl(args->device) : nullptr;
     if (!device && args->memory) {
-        device = args->memory->device;
+        device = as_impl(args->memory)->device;
     }
-    if (!device && !args->client->device_ptrs.empty()) {
-        device = args->client->device_ptrs[0];
+    if (!device && !client->device_ptrs.empty()) {
+        device = as_impl(client->device_ptrs[0]);
     }
     if (!device) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "no target device");
@@ -126,8 +126,8 @@ PJRT_Error* client_buffer_from_host_buffer(PJRT_Client_BufferFromHostBuffer_Args
         }
     }
 
-    auto* buf = new PJRT_Buffer();
-    buf->client = args->client;
+    auto* buf = new ParasBuffer();
+    buf->client = client;
     buf->device = device;
     buf->memory = device->default_memory;
     buf->element_type = args->type;
@@ -136,14 +136,14 @@ PJRT_Error* client_buffer_from_host_buffer(PJRT_Client_BufferFromHostBuffer_Args
     buf->data = dev_ptr;
     buf->byte_size = nbytes;
 
-    args->buffer = buf;
+    args->buffer = to_pjrt(buf);
     args->done_with_host_buffer = make_ready_event();
     return nullptr;
 }
 
 PJRT_Error* buffer_destroy(PJRT_Buffer_Destroy_Args* args) {
     if (!args || !args->buffer) return nullptr;
-    PJRT_Buffer* buf = args->buffer;
+    ParasBuffer* buf = as_impl(args->buffer);
     if (!buf->deleted.exchange(true) && buf->data) {
         paras_pjrt::free_device(buf->device->local_hardware_id, buf->data);
         buf->data = nullptr;
@@ -156,7 +156,7 @@ PJRT_Error* buffer_element_type(PJRT_Buffer_ElementType_Args* args) {
     if (!args || !args->buffer) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null buffer");
     }
-    args->type = args->buffer->element_type;
+    args->type = as_impl(args->buffer)->element_type;
     return nullptr;
 }
 
@@ -164,8 +164,9 @@ PJRT_Error* buffer_dimensions(PJRT_Buffer_Dimensions_Args* args) {
     if (!args || !args->buffer) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null buffer");
     }
-    args->dims = args->buffer->dims.data();
-    args->num_dims = args->buffer->dims.size();
+    ParasBuffer* buf = as_impl(args->buffer);
+    args->dims = buf->dims.data();
+    args->num_dims = buf->dims.size();
     return nullptr;
 }
 
@@ -173,8 +174,9 @@ PJRT_Error* buffer_unpadded_dimensions(PJRT_Buffer_UnpaddedDimensions_Args* args
     if (!args || !args->buffer) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null buffer");
     }
-    args->unpadded_dims = args->buffer->dims.data();
-    args->num_dims = args->buffer->dims.size();
+    ParasBuffer* buf = as_impl(args->buffer);
+    args->unpadded_dims = buf->dims.data();
+    args->num_dims = buf->dims.size();
     return nullptr;
 }
 
@@ -191,9 +193,10 @@ PJRT_Error* buffer_get_memory_layout(PJRT_Buffer_GetMemoryLayout_Args* args) {
     if (!args || !args->buffer) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null buffer");
     }
+    ParasBuffer* buf = as_impl(args->buffer);
     args->layout.type = PJRT_Buffer_MemoryLayout_Type_Tiled;
-    args->layout.tiled.minor_to_major = args->buffer->minor_to_major.data();
-    args->layout.tiled.minor_to_major_size = args->buffer->minor_to_major.size();
+    args->layout.tiled.minor_to_major = buf->minor_to_major.data();
+    args->layout.tiled.minor_to_major_size = buf->minor_to_major.size();
     args->layout.tiled.tile_dims = nullptr;
     args->layout.tiled.tile_dim_sizes = nullptr;
     args->layout.tiled.num_tiles = 0;
@@ -204,7 +207,7 @@ PJRT_Error* buffer_on_device_size_in_bytes(PJRT_Buffer_OnDeviceSizeInBytes_Args*
     if (!args || !args->buffer) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null buffer");
     }
-    args->on_device_size_in_bytes = args->buffer->byte_size;
+    args->on_device_size_in_bytes = as_impl(args->buffer)->byte_size;
     return nullptr;
 }
 
@@ -212,7 +215,7 @@ PJRT_Error* buffer_device(PJRT_Buffer_Device_Args* args) {
     if (!args || !args->buffer) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null buffer");
     }
-    args->device = args->buffer->device;
+    args->device = to_pjrt(as_impl(args->buffer)->device);
     return nullptr;
 }
 
@@ -220,13 +223,13 @@ PJRT_Error* buffer_memory(PJRT_Buffer_Memory_Args* args) {
     if (!args || !args->buffer) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null buffer");
     }
-    args->memory = args->buffer->memory;
+    args->memory = to_pjrt(as_impl(args->buffer)->memory);
     return nullptr;
 }
 
 PJRT_Error* buffer_delete(PJRT_Buffer_Delete_Args* args) {
     if (!args || !args->buffer) return nullptr;
-    PJRT_Buffer* buf = args->buffer;
+    ParasBuffer* buf = as_impl(args->buffer);
     if (!buf->deleted.exchange(true) && buf->data) {
         paras_pjrt::free_device(buf->device->local_hardware_id, buf->data);
         buf->data = nullptr;
@@ -238,7 +241,7 @@ PJRT_Error* buffer_is_deleted(PJRT_Buffer_IsDeleted_Args* args) {
     if (!args || !args->buffer) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null buffer");
     }
-    args->is_deleted = args->buffer->deleted.load();
+    args->is_deleted = as_impl(args->buffer)->deleted.load();
     return nullptr;
 }
 
@@ -246,28 +249,29 @@ PJRT_Error* buffer_copy_to_device(PJRT_Buffer_CopyToDevice_Args* args) {
     if (!args || !args->buffer || !args->dst_device) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "invalid CopyToDevice args");
     }
-    PJRT_Buffer* src = args->buffer;
+    ParasBuffer* src = as_impl(args->buffer);
+    ParasDevice* dst_dev = as_impl(args->dst_device);
     std::string err_msg;
     void* dst_ptr = paras_pjrt::alloc_device(
-        args->dst_device->local_hardware_id, src->byte_size, &err_msg);
+        dst_dev->local_hardware_id, src->byte_size, &err_msg);
     if (!dst_ptr) {
         return make_pjrt_error(PJRT_Error_Code_RESOURCE_EXHAUSTED, err_msg);
     }
-    if (!paras_pjrt::copy_d2d(args->dst_device->local_hardware_id, dst_ptr, src->data,
+    if (!paras_pjrt::copy_d2d(dst_dev->local_hardware_id, dst_ptr, src->data,
                               src->byte_size, &err_msg)) {
-        paras_pjrt::free_device(args->dst_device->local_hardware_id, dst_ptr);
+        paras_pjrt::free_device(dst_dev->local_hardware_id, dst_ptr);
         return make_pjrt_error(PJRT_Error_Code_INTERNAL, err_msg);
     }
-    auto* dst = new PJRT_Buffer();
+    auto* dst = new ParasBuffer();
     dst->client = src->client;
-    dst->device = args->dst_device;
-    dst->memory = args->dst_device->default_memory;
+    dst->device = dst_dev;
+    dst->memory = dst_dev->default_memory;
     dst->element_type = src->element_type;
     dst->dims = src->dims;
     dst->minor_to_major = src->minor_to_major;
     dst->data = dst_ptr;
     dst->byte_size = src->byte_size;
-    args->dst_buffer = dst;
+    args->dst_buffer = to_pjrt(dst);
     return nullptr;
 }
 
@@ -275,8 +279,7 @@ PJRT_Error* buffer_to_host_buffer(PJRT_Buffer_ToHostBuffer_Args* args) {
     if (!args || !args->src) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null src buffer");
     }
-    PJRT_Buffer* buf = args->src;
-    // Two-phase size query: JAX calls with dst == nullptr first.
+    ParasBuffer* buf = as_impl(args->src);
     if (args->dst == nullptr) {
         args->dst_size = buf->byte_size;
         return nullptr;
@@ -318,7 +321,7 @@ PJRT_Error* buffer_unsafe_pointer(PJRT_Buffer_UnsafePointer_Args* args) {
     if (!args || !args->buffer) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null buffer");
     }
-    args->unsafe_pointer = reinterpret_cast<uintptr_t>(args->buffer->data);
+    args->unsafe_pointer = reinterpret_cast<uintptr_t>(as_impl(args->buffer)->data);
     return nullptr;
 }
 

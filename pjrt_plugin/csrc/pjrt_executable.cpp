@@ -8,7 +8,7 @@ namespace paras_pjrt_api {
 
 PJRT_Error* executable_destroy(PJRT_Executable_Destroy_Args* args) {
     if (!args || !args->executable) return nullptr;
-    delete args->executable;
+    delete as_impl(args->executable);
     return nullptr;
 }
 
@@ -16,8 +16,9 @@ PJRT_Error* executable_name(PJRT_Executable_Name_Args* args) {
     if (!args || !args->executable) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null executable");
     }
-    args->executable_name = args->executable->name.c_str();
-    args->executable_name_size = args->executable->name.size();
+    ParasExecutable* exec = as_impl(args->executable);
+    args->executable_name = exec->name.c_str();
+    args->executable_name_size = exec->name.size();
     return nullptr;
 }
 
@@ -41,8 +42,9 @@ PJRT_Error* executable_output_element_types(PJRT_Executable_OutputElementTypes_A
     if (!args || !args->executable) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null executable");
     }
-    args->output_types = args->executable->output_types.data();
-    args->num_output_types = args->executable->output_types.size();
+    ParasExecutable* exec = as_impl(args->executable);
+    args->output_types = exec->output_types.data();
+    args->num_output_types = exec->output_types.size();
     return nullptr;
 }
 
@@ -50,9 +52,10 @@ PJRT_Error* executable_output_dimensions(PJRT_Executable_OutputDimensions_Args* 
     if (!args || !args->executable) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null executable");
     }
+    ParasExecutable* exec = as_impl(args->executable);
     args->num_outputs = 1;
-    args->dims = args->executable->output_dims.data();
-    args->dim_sizes = args->executable->output_dim_sizes.data();
+    args->dims = exec->output_dims.data();
+    args->dim_sizes = exec->output_dim_sizes.data();
     return nullptr;
 }
 
@@ -72,8 +75,9 @@ PJRT_Error* executable_fingerprint(PJRT_Executable_Fingerprint_Args* args) {
     if (!args || !args->executable) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null executable");
     }
-    args->executable_fingerprint = args->executable->fingerprint.c_str();
-    args->executable_fingerprint_size = args->executable->fingerprint.size();
+    ParasExecutable* exec = as_impl(args->executable);
+    args->executable_fingerprint = exec->fingerprint.c_str();
+    args->executable_fingerprint_size = exec->fingerprint.size();
     return nullptr;
 }
 
@@ -100,7 +104,7 @@ PJRT_Error* executable_get_compiled_memory_stats(PJRT_Executable_GetCompiledMemo
 
 PJRT_Error* loaded_executable_destroy(PJRT_LoadedExecutable_Destroy_Args* args) {
     if (!args || !args->executable) return nullptr;
-    delete args->executable;
+    delete as_impl(args->executable);
     return nullptr;
 }
 
@@ -108,9 +112,9 @@ PJRT_Error* loaded_executable_get_executable(PJRT_LoadedExecutable_GetExecutable
     if (!args || !args->loaded_executable) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null loaded_executable");
     }
-    // Caller owns the returned PJRT_Executable* and will destroy it via PJRT_Executable_Destroy.
-    auto* copy = new PJRT_Executable(*args->loaded_executable->executable);
-    args->executable = copy;
+    ParasLoadedExecutable* loaded = as_impl(args->loaded_executable);
+    auto* copy = new ParasExecutable(*loaded->executable);
+    args->executable = to_pjrt(copy);
     return nullptr;
 }
 
@@ -118,14 +122,15 @@ PJRT_Error* loaded_executable_addressable_devices(PJRT_LoadedExecutable_Addressa
     if (!args || !args->executable) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null loaded_executable");
     }
-    args->addressable_devices = args->executable->addressable_devices.data();
-    args->num_addressable_devices = args->executable->addressable_devices.size();
+    ParasLoadedExecutable* loaded = as_impl(args->executable);
+    args->addressable_devices = loaded->addressable_devices.data();
+    args->num_addressable_devices = loaded->addressable_devices.size();
     return nullptr;
 }
 
 PJRT_Error* loaded_executable_delete(PJRT_LoadedExecutable_Delete_Args* args) {
     if (!args || !args->executable) return nullptr;
-    args->executable->deleted = true;
+    as_impl(args->executable)->deleted = true;
     return nullptr;
 }
 
@@ -133,7 +138,7 @@ PJRT_Error* loaded_executable_is_deleted(PJRT_LoadedExecutable_IsDeleted_Args* a
     if (!args || !args->executable) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null loaded_executable");
     }
-    args->is_deleted = args->executable->deleted;
+    args->is_deleted = as_impl(args->executable)->deleted;
     return nullptr;
 }
 
@@ -141,7 +146,7 @@ PJRT_Error* loaded_executable_execute(PJRT_LoadedExecutable_Execute_Args* args) 
     if (!args || !args->executable) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null loaded_executable");
     }
-    PJRT_LoadedExecutable* loaded = args->executable;
+    ParasLoadedExecutable* loaded = as_impl(args->executable);
     if (args->num_devices != 1) {
         return make_pjrt_error(PJRT_Error_Code_UNIMPLEMENTED,
                                "v0.1 supports single-device execution only");
@@ -151,8 +156,8 @@ PJRT_Error* loaded_executable_execute(PJRT_LoadedExecutable_Execute_Args* args) 
                                "MatMul executable expects exactly 2 arguments");
     }
 
-    PJRT_Buffer* buf_a = args->argument_lists[0][0];
-    PJRT_Buffer* buf_b = args->argument_lists[0][1];
+    ParasBuffer* buf_a = as_impl(args->argument_lists[0][0]);
+    ParasBuffer* buf_b = as_impl(args->argument_lists[0][1]);
     if (!buf_a || !buf_b || buf_a->deleted.load() || buf_b->deleted.load()) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "invalid or deleted input buffer");
     }
@@ -168,7 +173,7 @@ PJRT_Error* loaded_executable_execute(PJRT_LoadedExecutable_Execute_Args* args) 
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "GEMM dimension exceeds int32");
     }
 
-    PJRT_Device* device = loaded->addressable_devices[0];
+    ParasDevice* device = as_impl(loaded->addressable_devices[0]);
     const std::size_t out_elems = static_cast<std::size_t>(plan.m) * static_cast<std::size_t>(plan.n);
     const std::size_t out_bytes = out_elems * sizeof(float);
 
@@ -197,7 +202,7 @@ PJRT_Error* loaded_executable_execute(PJRT_LoadedExecutable_Execute_Args* args) 
         }
     }
 
-    auto* out_buf = new PJRT_Buffer();
+    auto* out_buf = new ParasBuffer();
     out_buf->client = loaded->client;
     out_buf->device = device;
     out_buf->memory = device->default_memory;
@@ -207,7 +212,7 @@ PJRT_Error* loaded_executable_execute(PJRT_LoadedExecutable_Execute_Args* args) 
     out_buf->data = out_ptr;
     out_buf->byte_size = out_bytes;
 
-    args->output_lists[0][0] = out_buf;
+    args->output_lists[0][0] = to_pjrt(out_buf);
     if (args->device_complete_events != nullptr) {
         args->device_complete_events[0] = make_ready_event();
     }
