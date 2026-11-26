@@ -133,7 +133,7 @@ PJRT_Event* make_ready_event(ParasError* err = nullptr);
 namespace paras_pjrt_api {
 
 // Event functions
-void        event_destroy(PJRT_Event_Destroy_Args* args);
+PJRT_Error* event_destroy(PJRT_Event_Destroy_Args* args);
 PJRT_Error* event_is_ready(PJRT_Event_IsReady_Args* args);
 PJRT_Error* event_error(PJRT_Event_Error_Args* args);
 PJRT_Error* event_await(PJRT_Event_Await_Args* args);

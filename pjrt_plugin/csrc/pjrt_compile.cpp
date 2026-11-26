@@ -77,15 +77,6 @@ bool deserialize_mlir_bytecode(const char* code, std::size_t size,
     return ok;
 }
 
-bool parse_tensor_2d_f32(const std::string& text, int64_t& d0, int64_t& d1) {
-    std::smatch m;
-    static const std::regex re(R"(tensor<(\d+)x(\d+)xf32>)");
-    if (!std::regex_search(text, m, re)) return false;
-    d0 = std::stoll(m[1].str());
-    d1 = std::stoll(m[2].str());
-    return true;
-}
-
 bool parse_stablehlo_matmul(const std::string& mlir, MatMulPlan& plan, std::string& err_msg) {
     // Extract all 2D f32 tensor types from the function signature or dot_general op.
     std::vector<std::pair<int64_t, int64_t>> sig_tensors;

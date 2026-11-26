@@ -9,9 +9,10 @@ PJRT_Event* make_ready_event(ParasError* err) {
 
 namespace paras_pjrt_api {
 
-void event_destroy(PJRT_Event_Destroy_Args* args) {
-    if (!args || !args->event) return;
+PJRT_Error* event_destroy(PJRT_Event_Destroy_Args* args) {
+    if (!args || !args->event) return nullptr;
     delete as_impl(args->event);
+    return nullptr;
 }
 
 PJRT_Error* event_is_ready(PJRT_Event_IsReady_Args* args) {
