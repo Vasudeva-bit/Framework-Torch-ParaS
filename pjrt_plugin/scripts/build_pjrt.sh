@@ -8,7 +8,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${PLUGIN_ROOT}/.." && pwd)"
 
-source "${REPO_ROOT}/scripts/env.sh"
+: "${PARAS_HOME:?Please set PARAS_HOME}"
+: "${PTSYCL_GCC_TOOLCHAIN:?Please set PTSYCL_GCC_TOOLCHAIN}"
+: "${PTSYCL_LLVM_DIR:?Please set PTSYCL_LLVM_DIR}"
+
+export PTSYCL_CUDA_HOME="${PTSYCL_CUDA_HOME:-/usr/local/cuda}"
+export PTSYCL_ROCM_HOME="${PTSYCL_ROCM_HOME:-/opt/rocm}"
+export PATH="${PTSYCL_LLVM_DIR}/bin:${PARAS_HOME}/bin:${PTSYCL_CUDA_HOME}/bin:${PTSYCL_ROCM_HOME}/bin:${PATH}"
+export LD_LIBRARY_PATH="${PTSYCL_GCC_TOOLCHAIN}/lib64:${PTSYCL_LLVM_DIR}/lib:${PARAS_HOME}/lib:${PTSYCL_CUDA_HOME}/lib64:${PTSYCL_ROCM_HOME}/lib:${LD_LIBRARY_PATH:-}"
 
 case "${FLAVOR}" in
     cpu)  DEVICE="cpu" ;;
