@@ -245,8 +245,8 @@ PJRT_Error* topology_get_device_descriptions(
     if (!args || !args->topology) {
         return make_pjrt_error(PJRT_Error_Code_INVALID_ARGUMENT, "null topology");
     }
-    ParasTopologyDescription* topo = as_impl(args->topology);
-    args->descriptions = topo->device_descriptions.data();
+    const ParasTopologyDescription* topo = as_impl(args->topology);
+    args->descriptions = const_cast<PJRT_DeviceDescription**>(topo->device_descriptions.data());
     args->num_descriptions = topo->device_descriptions.size();
     return nullptr;
 }
