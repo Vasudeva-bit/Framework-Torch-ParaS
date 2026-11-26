@@ -66,7 +66,7 @@ bool deserialize_mlir_bytecode(const char* code, std::size_t size,
                     "    m = mlir.ir.Module.parse(data, ctx)\n"
                     "except Exception:\n"
                     "    from jaxlib.mlir.dialects import stablehlo\n"
-                    "    m = mlir.ir.Module.parse(stablehlo.deserialize_portable_artifact(data), ctx)\n"
+                    "    m = stablehlo.deserialize_portable_artifact(ctx, data)\n"
                     "print(mlir.module_to_string(m))\n"
                     "\" ") +
         tmp_path;
