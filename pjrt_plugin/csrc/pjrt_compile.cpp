@@ -56,8 +56,16 @@ bool deserialize_mlir_bytecode(const char* code, std::size_t size,
     }
     close(fd);
 
+    const std::string py_cmd =
+        std::string("python -c \"import sys; from jax._src.interpreters import mlir; "
+                    "ctx = mlir.make_ir_context(); "
+                    "data = open(sys.argv[1], 'rb').read(); "
+                    "print(mlir.ir.Module.parse(data, ctx))\" ") +
+        tmp_path + " 2>/dev/null";
+
     const std::vector<std::string> tools = {
         std::string("stablehlo-translate --deserialize ") + tmp_path + " 2>/dev/null",
+        py_cmd,
         std::string("mlir-opt --allow-unregistered-dialect ") + tmp_path + " 2>/dev/null",
     };
 
